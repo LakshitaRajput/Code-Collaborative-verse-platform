@@ -33,16 +33,17 @@ const Footer = () => {
         </svg>{" "}
         by{" "}
         <a
-          href="Manisha sharma"
-          target="__blank"
+          href="Lakshita Rajput"
+          target="_blank"
           className="text-gray-700  hover:bg-red-500 hover:text-white font-medium"
         >
-          Manisha sharma.{" "}
+          Lakshita Rajput.{" "}
         </a>
         Code at{" "}
         <a
-          href="link will be added soon"
-          target="__blank"
+          href="https://github.com/LakshitaRajput/Code-Collaborative-verse-platform"
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-gray-700  hover:bg-red-500 hover:text-white font-medium"
         >
           GitHub.{" "}

@@ -32,7 +32,7 @@ export const CollaborationProvider = ({ children }) => {
   // Initialize socket connection with optimization options
   useEffect(() => {
     // Connect to the WebSocket server with optimized connection
-    socket = io("http://localhost:5000", {
+    socket = io(process.env.REACT_APP_SOCKET_URL || window.location.origin, {
       transports: ["websocket"],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
