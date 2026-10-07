@@ -120,11 +120,27 @@ export const CollaborationProvider = ({ children }) => {
 
   // Join an existing session
   const joinSession = useCallback((id) => {
-    log(`Joining session: ${id}`);
-    setSessionId(id);
-    socket.emit("join-session", id);
-    setIsCollaborating(true);
-  }, []);
+  let sessionIdToJoin = id.trim();
+
+  // If a full shareable URL was provided, extract the session ID
+  try {
+    if (sessionIdToJoin.includes("?session=")) {
+      const url = new URL(sessionIdToJoin);
+      sessionIdToJoin = url.searchParams.get("session");
+    }
+  } catch (error) {
+    console.error("Invalid session link:", error);
+    return;
+  }
+  if (!sessionIdToJoin) {
+    toast.error("Invalid session ID or session link");
+    return;
+  }
+  log(`Joining session: ${sessionIdToJoin}`);
+  setSessionId(sessionIdToJoin);
+  socket.emit("join-session", sessionIdToJoin);
+  setIsCollaborating(true);
+}, []);
 
   // Leave the current session
   const leaveSession = useCallback(() => {

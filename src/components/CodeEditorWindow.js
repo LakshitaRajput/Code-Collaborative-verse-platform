@@ -1,5 +1,4 @@
-import React, { useEffect, useRef, useCallback, useState } from "react";
-
+import React, { useEffect, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { useCollaboration } from "../contexts/CollaborationContext";
 import { defineTheme } from "../lib/defineTheme";
@@ -26,6 +25,35 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
   // Flag to ignore local changes while applying remote change
   const ignoreChangeRef = useRef(false);
   // Active edit sections
+  // Keep the latest collaboration state available to Monaco listeners.
+// The editor mounts before the user joins a session, so we cannot rely
+// on the values captured when the editor first mounted.
+const collaborationStateRef = useRef({
+  isCollaborating,
+  sessionId,
+  socket,
+  updateCode,
+  updateCursorPosition,
+  onChange,
+});
+
+useEffect(() => {
+  collaborationStateRef.current = {
+    isCollaborating,
+    sessionId,
+    socket,
+    updateCode,
+    updateCursorPosition,
+    onChange,
+  };
+}, [
+  isCollaborating,
+  sessionId,
+  socket,
+  updateCode,
+  updateCursorPosition,
+  onChange,
+]);
   const [activeEdits, setActiveEdits] = useState({});
   // Timeout handles for edit highlights
   const editTimeoutsRef = useRef({});
@@ -151,18 +179,16 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
         // Set flag to ignore local change events while applying remote change
         ignoreChangeRef.current = true;
 
-        // Save selection state and scroll position
+        // Save selection state
         const selection = editorRef.current.getSelection();
-        const scrollPosition = editorRef.current.getScrollPosition();
 
         // Update the code
         editorRef.current.setValue(newCode);
 
-        // Restore selection and scroll position
+        // Restore selection
         if (selection) {
           editorRef.current.setSelection(selection);
-        }
-        editorRef.current.setScrollPosition(scrollPosition);
+      }
 
         // Update lastSentCode to avoid echo
         lastSentCodeRef.current = newCode;
@@ -292,7 +318,7 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
   const highlightChanges = (changes, userId) => {
     if (!editorRef.current || !monacoRef.current) return;
 
-    const userColor = getUserColor(userId);
+    // const userColor = getUserColor(userId);
 
     // Remove previous decorations for this user
     if (editDecorationRef.current[userId]) {
@@ -440,50 +466,95 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
 
     // Listen for cursor position changes
     editor.onDidChangeCursorPosition((e) => {
-      if (isCollaborating && !ignoreChangeRef.current) {
-        const position = {
-          lineNumber: e.position.lineNumber,
-          column: e.position.column,
-        };
-        updateCursorPosition(position);
-      }
-    });
+    const {
+    isCollaborating: currentlyCollaborating,
+    updateCursorPosition: currentUpdateCursorPosition,
+    } = collaborationStateRef.current;
+
+    if (currentlyCollaborating && !ignoreChangeRef.current) {
+    const position = {
+      lineNumber: e.position.lineNumber,
+      column: e.position.column,
+    };
+
+    currentUpdateCursorPosition(position);
+    }
+  });
 
     // Add content change listener for real-time updates
     editor.onDidChangeModelContent((event) => {
-      if (isCollaborating && sessionId && !ignoreChangeRef.current) {
-        const currentContent = editor.getValue();
-        // Only send if content has actually changed
-        if (currentContent !== lastSentCodeRef.current) {
-          console.log("Local change detected, sending update...");
+  const {
+    isCollaborating: currentlyCollaborating,
+    sessionId: currentSessionId,
+    socket: currentSocket,
+    updateCode: currentUpdateCode,
+    onChange: currentOnChange,
+  } = collaborationStateRef.current;
 
-          // Notify about current editing position
-          const selection = editor.getSelection();
-          if (selection) {
-            const startLine = selection.startLineNumber;
-            const endLine = selection.endLineNumber;
+  if (
+    currentlyCollaborating &&
+    currentSessionId &&
+    currentSocket &&
+    !ignoreChangeRef.current
+  ) {
+    const currentContent = editor.getValue();
 
-            // Emit edit activity for other users to see
-            socket.emit("edit-activity", {
-              sessionId,
-              lineNumber: startLine,
-              endLineNumber: endLine,
-              userId: socket.id,
-            });
-          }
+    if (currentContent !== lastSentCodeRef.current) {
+      console.log("Local change detected, sending update...");
 
-          lastSentCodeRef.current = currentContent;
-          updateCode(currentContent);
-          onChange("code", currentContent);
+      const selection = editor.getSelection();
 
-          // Trigger real-time status update
-          if (window.updateCollaborationStatus) {
-            window.updateCollaborationStatus();
-          }
-        }
+      if (selection) {
+        const startLine = selection.startLineNumber;
+        const endLine = selection.endLineNumber;
+
+        currentSocket.emit("edit-activity", {
+          sessionId: currentSessionId,
+          lineNumber: startLine,
+          endLineNumber: endLine,
+          userId: currentSocket.id,
+        });
       }
-    });
+
+      lastSentCodeRef.current = currentContent;
+
+      // Send the latest code using the current collaboration state
+      currentUpdateCode(currentContent);
+
+      // Update local React state
+      currentOnChange("code", currentContent);
+
+      if (window.updateCollaborationStatus) {
+        window.updateCollaborationStatus();
+      }
+    }
+  }
+});
+// Perform the initial Monaco layout after the editor is mounted
+requestAnimationFrame(() => {
+  editor.layout();
+});
+
+setTimeout(() => {
+  editor.layout();
+}, 100);
+};
+
+   useEffect(() => {
+  if (!editorRef.current) return;
+
+  const handleResize = () => {
+    if (editorRef.current) {
+      editorRef.current.layout();
+    }
   };
+
+  window.addEventListener("resize", handleResize);
+
+  return () => {
+    window.removeEventListener("resize", handleResize);
+  };
+}, []);
 
   // Update remote cursors when they change
   useEffect(() => {
@@ -822,7 +893,7 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
     if (!editorRef.current || !monacoRef.current) return;
 
     const editor = editorRef.current;
-    const monaco = monacoRef.current;
+    // const monaco = monacoRef.current;
 
     // Close menu
     setActiveMenu(null);
@@ -1323,7 +1394,7 @@ const CodeEditorWindow = ({ onChange, language, code, theme }) => {
             folding: editorSettings.folding,
             lineNumbers: editorSettings.lineNumbers,
             lineNumbersMinChars: 4,
-            automaticLayout: true,
+            automaticLayout: false,
             tabSize: editorSettings.tabSize,
             glyphMargin: false,
             contextmenu: true,
